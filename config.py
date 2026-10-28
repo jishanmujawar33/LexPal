@@ -11,9 +11,19 @@ BASE_DIR   = Path(__file__).parent.resolve()
 DATA_DIR   = BASE_DIR / "data"
 CHROMA_DIR = BASE_DIR / "legal_db"
 
-# ── Ollama / LLM ──────────────────────────────────────────────────────────────
+# ── LLM Backend ───────────────────────────────────────────────────────────────
+# Set LLM_BACKEND=groq in env to use Groq free API instead of local Ollama.
+# Get a free Groq key at: https://console.groq.com
+LLM_BACKEND     = os.getenv("LLM_BACKEND", "ollama")   # "ollama" or "groq"
+
+# Ollama (local)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+# Groq (free cloud API – llama3 on Groq is fast and free-tier available)
+GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL      = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+
 
 # ── Embeddings ────────────────────────────────────────────────────────────────
 EMBED_MODEL = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")

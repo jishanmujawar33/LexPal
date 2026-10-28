@@ -129,7 +129,56 @@ def retrieve_chunks(query: str, n: int = TOP_K) -> list[dict]:
     return chunks
 
 
-def call_ollama(system_prompt: str, user_message: str) -> str:
+def call_llm(system_prompt: str, user_message: str) -> str:
+    """
+    Call the configured LLM backend.
+    - LLM_BACKEND=ollama (default): local Ollama server
+    - LLM_BACKEND=groq: Groq cloud API (free tier, fast)
+    """
+    from config import LLM_BACKEND
+    if LLM_BACKEND == "groq":
+        return _call_groq(system_prompt, user_message)
+    return _call_ollama(system_prompt, user_message)
+
+
+def _call_groq(system_prompt: str, user_message: str) -> str:
+    """Call Groq free cloud API (Llama 3 hosted by Groq)."""
+    import httpx
+    from config import GROQ_API_KEY, GROQ_MODEL
+
+    if not GROQ_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="GROQ_API_KEY environment variable is not set. Get a free key at https://console.groq.com",
+        )
+    try:
+        resp = httpx.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GROQ_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_message},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 1024,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Cannot reach Groq API. Check your internet connection.")
+    except Exception as e:
+        logger.error(f"Groq error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _call_ollama(system_prompt: str, user_message: str) -> str:
     """Call the local Ollama LLM via its HTTP API."""
     import httpx
 
@@ -154,12 +203,19 @@ def call_ollama(system_prompt: str, user_message: str) -> str:
             status_code=503,
             detail=(
                 "Ollama is not running. Start it with: ollama serve\n"
-                "Then pull the model: ollama pull llama3.1:8b"
+                "Then pull the model: ollama pull llama3.1:8b\n"
+                "Or set LLM_BACKEND=groq and GROQ_API_KEY for cloud deployment."
             ),
         )
     except Exception as e:
         logger.error(f"Ollama error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Keep backward-compatible alias
+def call_ollama(system_prompt: str, user_message: str) -> str:
+    return call_llm(system_prompt, user_message)
+
 
 
 def build_context(chunks: list[dict]) -> str:
