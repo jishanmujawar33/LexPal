@@ -1,5 +1,3 @@
-# System packages for Streamlit Community Cloud
-# These are installed via apt-get before pip packages
 tesseract-ocr
 tesseract-ocr-hin
 tesseract-ocr-mar
