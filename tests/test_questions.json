@@ -1,0 +1,212 @@
+[
+  {
+    "id": "Q001",
+    "question": "What is the time limit for filing a consumer complaint?",
+    "expected_section": "Section 69",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["two years", "2 years", "limitation"]
+  },
+  {
+    "id": "Q002",
+    "question": "What reliefs can a consumer forum grant?",
+    "expected_section": "Section 39",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["refund", "compensation", "replacement", "repair"]
+  },
+  {
+    "id": "Q003",
+    "question": "What is the pecuniary jurisdiction of the District Consumer Commission?",
+    "expected_section": "Section 34",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["one crore", "1 crore", "rupees"]
+  },
+  {
+    "id": "Q004",
+    "question": "What does 'deficiency in service' mean under Consumer Protection Act?",
+    "expected_section": "Section 2",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["deficiency", "service", "imperfection", "shortcoming"]
+  },
+  {
+    "id": "Q005",
+    "question": "What is an unfair trade practice under Consumer Protection Act?",
+    "expected_section": "Section 2(47)",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["unfair", "trade practice", "misleading"]
+  },
+  {
+    "id": "Q006",
+    "question": "What is the punishment for cheque bounce?",
+    "expected_section": "Section 138",
+    "expected_act": "Negotiable Instruments Act 1881",
+    "expected_keywords": ["imprisonment", "fine", "two years", "twice"]
+  },
+  {
+    "id": "Q007",
+    "question": "How much time does the drawer have to pay after receiving a cheque bounce notice?",
+    "expected_section": "Section 138",
+    "expected_act": "Negotiable Instruments Act 1881",
+    "expected_keywords": ["fifteen days", "15 days"]
+  },
+  {
+    "id": "Q008",
+    "question": "What notice must be sent before filing a cheque bounce case?",
+    "expected_section": "Section 138",
+    "expected_act": "Negotiable Instruments Act 1881",
+    "expected_keywords": ["demand notice", "30 days", "notice in writing"]
+  },
+  {
+    "id": "Q009",
+    "question": "What is a negotiable instrument?",
+    "expected_section": "Section 13",
+    "expected_act": "Negotiable Instruments Act 1881",
+    "expected_keywords": ["promissory note", "bill of exchange", "cheque"]
+  },
+  {
+    "id": "Q010",
+    "question": "What is the definition of a cheque under NI Act?",
+    "expected_section": "Section 6",
+    "expected_act": "Negotiable Instruments Act 1881",
+    "expected_keywords": ["bill of exchange", "banker", "payable on demand"]
+  },
+  {
+    "id": "Q011",
+    "question": "What is a digital signature under the IT Act?",
+    "expected_section": "Section 2",
+    "expected_act": "Information Technology Act 2000",
+    "expected_keywords": ["digital signature", "electronic record", "asymmetric"]
+  },
+  {
+    "id": "Q012",
+    "question": "What is the punishment for hacking under the IT Act?",
+    "expected_section": "Section 66",
+    "expected_act": "Information Technology Act 2000",
+    "expected_keywords": ["imprisonment", "fine", "three years", "computer"]
+  },
+  {
+    "id": "Q013",
+    "question": "What is cyber stalking under IT Act?",
+    "expected_section": "Section 66A",
+    "expected_act": "Information Technology Act 2000",
+    "expected_keywords": ["offensive", "message", "communication"]
+  },
+  {
+    "id": "Q014",
+    "question": "What are the penalties for identity theft under IT Act?",
+    "expected_section": "Section 66C",
+    "expected_act": "Information Technology Act 2000",
+    "expected_keywords": ["identity theft", "electronic signature", "password", "imprisonment"]
+  },
+  {
+    "id": "Q015",
+    "question": "What is the punishment for publishing obscene material online?",
+    "expected_section": "Section 67",
+    "expected_act": "Information Technology Act 2000",
+    "expected_keywords": ["obscene", "lascivious", "imprisonment", "fine"]
+  },
+  {
+    "id": "Q016",
+    "question": "What is the time limit to respond to an RTI application?",
+    "expected_section": "Section 7",
+    "expected_act": "Right to Information Act 2005",
+    "expected_keywords": ["thirty days", "30 days"]
+  },
+  {
+    "id": "Q017",
+    "question": "Who is a Public Information Officer?",
+    "expected_section": "Section 5",
+    "expected_act": "Right to Information Act 2005",
+    "expected_keywords": ["public information officer", "PIO", "public authority"]
+  },
+  {
+    "id": "Q018",
+    "question": "What information is exempt from RTI?",
+    "expected_section": "Section 8",
+    "expected_act": "Right to Information Act 2005",
+    "expected_keywords": ["security", "sovereignty", "confidential", "exempt"]
+  },
+  {
+    "id": "Q019",
+    "question": "What is the fee for filing an RTI application?",
+    "expected_section": "Section 7",
+    "expected_act": "Right to Information Act 2005",
+    "expected_keywords": ["ten rupees", "Rs. 10", "fee", "BPL"]
+  },
+  {
+    "id": "Q020",
+    "question": "Can RTI be used to seek information about a private company?",
+    "expected_section": "Section 2(h)",
+    "expected_act": "Right to Information Act 2005",
+    "expected_keywords": ["public authority", "government", "substantially financed"]
+  },
+  {
+    "id": "Q021",
+    "question": "What are the grounds for eviction of a tenant in Maharashtra?",
+    "expected_section": "Section 16",
+    "expected_act": "Maharashtra Rent Control Act 1999",
+    "expected_keywords": ["eviction", "non-payment", "nuisance", "subletting"]
+  },
+  {
+    "id": "Q022",
+    "question": "What is the standard rent under Maharashtra Rent Control Act?",
+    "expected_section": "Section 8",
+    "expected_act": "Maharashtra Rent Control Act 1999",
+    "expected_keywords": ["standard rent", "fair rent", "fixation"]
+  },
+  {
+    "id": "Q023",
+    "question": "Can a landlord increase rent under Maharashtra Rent Control Act?",
+    "expected_section": "Section 6",
+    "expected_act": "Maharashtra Rent Control Act 1999",
+    "expected_keywords": ["increase", "rent", "four percent", "repairs"]
+  },
+  {
+    "id": "Q024",
+    "question": "What is the notice period required before eviction in Maharashtra?",
+    "expected_section": "Section 16",
+    "expected_act": "Maharashtra Rent Control Act 1999",
+    "expected_keywords": ["notice", "one month", "eviction", "quit"]
+  },
+  {
+    "id": "Q025",
+    "question": "What is a protected tenant under Maharashtra Rent Control Act?",
+    "expected_section": "Section 3",
+    "expected_act": "Maharashtra Rent Control Act 1999",
+    "expected_keywords": ["protected tenant", "premises", "occupation"]
+  },
+  {
+    "id": "Q026",
+    "question": "What is the definition of consumer under the Consumer Protection Act?",
+    "expected_section": "Section 2(7)",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["buys goods", "hires services", "consideration", "resale"]
+  },
+  {
+    "id": "Q027",
+    "question": "Can I file a consumer complaint online?",
+    "expected_section": "Section 35",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["e-filing", "electronic", "online", "complaint"]
+  },
+  {
+    "id": "Q028",
+    "question": "What is product liability under Consumer Protection Act?",
+    "expected_section": "Section 2(34)",
+    "expected_act": "Consumer Protection Act 2019",
+    "expected_keywords": ["product liability", "manufacturer", "seller", "defect"]
+  },
+  {
+    "id": "Q029",
+    "question": "What is the punishment for cheating using electronic means under IT Act?",
+    "expected_section": "Section 66D",
+    "expected_act": "Information Technology Act 2000",
+    "expected_keywords": ["cheating by personation", "communication device", "imprisonment"]
+  },
+  {
+    "id": "Q030",
+    "question": "Who can appeal against a first RTI response?",
+    "expected_section": "Section 19",
+    "expected_act": "Right to Information Act 2005",
+    "expected_keywords": ["appeal", "appellate authority", "thirty days", "first appeal"]
+  }
+]
