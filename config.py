@@ -14,7 +14,7 @@ CHROMA_DIR = BASE_DIR / "legal_db"
 # ── LLM Backend ───────────────────────────────────────────────────────────────
 # Set LLM_BACKEND=groq in env to use Groq free API instead of local Ollama.
 # Get a free Groq key at: https://console.groq.com
-LLM_BACKEND     = os.getenv("LLM_BACKEND", "ollama")   # "ollama" or "groq"
+LLM_BACKEND     = os.getenv("LLM_BACKEND", "groq")   # "ollama" or "groq"
 
 # Ollama (local)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

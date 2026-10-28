@@ -1,544 +1,837 @@
 """
-frontend.py  –  LexPal Streamlit Interface
-===========================================
-Run with:
-    streamlit run frontend.py
-
-Tabs:
-  1. Ask a Question  – RAG-powered Q&A with citations
-  2. Analyze My Document  – Upload PDF/DOCX/image → structured analysis
+LexPal – AI-Powered Legal Information Assistant
+Standalone Streamlit App (no FastAPI dependency)
 """
 
-import requests
-import streamlit as st
+import os
+import tempfile
+import logging
+from pathlib import Path
 
-# ── Page config ───────────────────────────────────────────────────────────────
+import streamlit as st
+import httpx
+
+from config import (
+    GROQ_API_KEY, GROQ_MODEL, CHROMA_DIR, CHROMA_COLLECTION,
+    EMBED_MODEL, RAG_SYSTEM_PROMPT, ANALYZE_SYSTEM_PROMPT,
+    DISCLAIMER, COVERED_ACTS, SUPPORTED_LANGUAGES, TOP_K, DATA_DIR,
+    CHUNK_SIZE, CHUNK_OVERLAP,
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("lexpal")
+
+# ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="LexPal – AI Legal Assistant",
+    page_title="LexPal — AI Legal Assistant",
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-API_BASE = "http://localhost:8000"
-
-DISCLAIMER_TEXT = (
-    "⚠️ **DISCLAIMER:** LexPal provides legal **information**, not legal **advice**. "
-    "For criminal charges, court deadlines, or large financial claims, "
-    "please consult a licensed lawyer."
-)
-
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ── Premium CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
 
-/* ── Root variables ─── */
+/* ── Hide Streamlit chrome ─── */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+.stDeployButton {display: none;}
+[data-testid="stToolbar"] {display: none;}
+
+/* ── Root ─── */
 :root {
-    --primary:   #4f46e5;
-    --primary-light: #818cf8;
-    --accent:    #06b6d4;
-    --bg:        #0f0f1a;
-    --card:      #1a1a2e;
-    --card2:     #16213e;
-    --border:    #2d2d52;
-    --text:      #e2e8f0;
-    --text-muted:#94a3b8;
-    --danger:    #ef4444;
-    --success:   #22c55e;
-    --warn:      #f59e0b;
+    --bg: #09090b;
+    --card: rgba(255,255,255,0.03);
+    --card-hover: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.06);
+    --border-hover: rgba(255,255,255,0.12);
+    --text: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --accent-1: #6366f1;
+    --accent-2: #8b5cf6;
+    --accent-3: #06b6d4;
+    --amber: #f59e0b;
+    --amber-bg: rgba(245,158,11,0.08);
+    --amber-border: rgba(245,158,11,0.2);
+    --emerald: #10b981;
+    --rose: #f43f5e;
 }
 
-/* ── Global ─── */
 html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
     background-color: var(--bg) !important;
     color: var(--text) !important;
 }
-.block-container { max-width: 1100px; padding: 1.5rem 2rem; }
 
-/* ── Header ─── */
+.block-container {
+    max-width: 920px !important;
+    padding: 2rem 1.5rem 4rem !important;
+}
+
+/* ── Animated gradient header ─── */
 .lex-header {
-    display: flex; align-items: center; gap: 14px;
-    padding: 1.2rem 0 0.4rem;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 1rem;
+    text-align: center;
+    padding: 2.5rem 0 1rem;
+    position: relative;
 }
 .lex-logo {
     font-family: 'Outfit', sans-serif;
-    font-size: 2.1rem; font-weight: 700;
-    background: linear-gradient(135deg, #818cf8 0%, #06b6d4 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #818cf8 0%, #a78bfa 30%, #06b6d4 70%, #34d399 100%);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gradient-shift 6s ease infinite;
 }
-.lex-tagline { color: var(--text-muted); font-size: 0.9rem; }
+@keyframes gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+.lex-tagline {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 400;
+    margin-top: 0.3rem;
+    letter-spacing: 0.02em;
+}
+
+/* ── Glass cards ─── */
+.glass-card {
+    background: var(--card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card:hover {
+    background: var(--card-hover);
+    border-color: var(--border-hover);
+}
+.glass-card-accent {
+    border-left: 3px solid var(--accent-1);
+}
 
 /* ── Disclaimer banner ─── */
-.disclaimer-banner {
-    background: rgba(239,68,68,0.1);
-    border: 1px solid rgba(239,68,68,0.4);
-    border-left: 4px solid var(--danger);
-    border-radius: 8px;
-    padding: 0.75rem 1.1rem;
-    margin-bottom: 1.2rem;
-    font-size: 0.88rem;
-    color: #fca5a5;
+.disclaimer-bar {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    border-radius: 12px;
+    padding: 0.7rem 1.2rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.82rem;
+    color: #fbbf24;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    line-height: 1.5;
 }
 
-/* ── Cards ─── */
-.lex-card {
+/* ── Metric cards ─── */
+.metric-row {
+    display: flex;
+    gap: 12px;
+    margin: 1rem 0 1.5rem;
+}
+.metric-card {
+    flex: 1;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 1.4rem 1.6rem;
-    margin-bottom: 1.2rem;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    padding: 1rem 1.2rem;
+    text-align: center;
+    transition: all 0.2s ease;
 }
-.lex-card-accent {
-    border-left: 4px solid var(--primary-light);
+.metric-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+}
+.metric-value {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 4px;
 }
 
-/* ── Answer text ─── */
-.answer-text {
-    font-size: 0.97rem;
-    line-height: 1.75;
+/* ── Source pills ─── */
+.source-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(99,102,241,0.1);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 100px;
+    padding: 4px 14px;
+    font-size: 0.76rem;
+    color: #a5b4fc;
+    margin: 3px 4px 3px 0;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+.source-pill:hover {
+    background: rgba(99,102,241,0.18);
+    border-color: rgba(99,102,241,0.4);
+}
+
+/* ── Answer block ─── */
+.answer-block {
+    font-size: 0.92rem;
+    line-height: 1.85;
+    color: var(--text);
     white-space: pre-wrap;
 }
-
-/* ── Source chip ─── */
-.source-chip {
-    display: inline-block;
-    background: rgba(79,70,229,0.2);
-    border: 1px solid rgba(79,70,229,0.5);
-    border-radius: 20px;
-    padding: 3px 12px;
-    font-size: 0.78rem;
-    color: var(--primary-light);
-    margin: 3px 4px 3px 0;
-    cursor: default;
-}
+.answer-block strong { color: #c4b5fd; }
 
 /* ── Lawyer callout ─── */
-.lawyer-callout {
-    background: rgba(245,158,11,0.1);
-    border: 1px solid rgba(245,158,11,0.35);
-    border-radius: 10px;
-    padding: 0.7rem 1rem;
-    color: #fde68a;
-    font-size: 0.88rem;
+.lawyer-box {
+    background: rgba(16,185,129,0.06);
+    border: 1px solid rgba(16,185,129,0.2);
+    border-radius: 12px;
+    padding: 0.8rem 1.1rem;
+    font-size: 0.84rem;
+    color: #6ee7b7;
     margin-top: 1rem;
+}
+.lawyer-box a { color: #6ee7b7; text-decoration: underline; }
+
+/* ── Extracted text ─── */
+.code-preview {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.6;
+}
+
+/* ── Section titles ─── */
+.section-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 1.2rem 0 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 /* ── Tabs ─── */
 .stTabs [data-baseweb="tab-list"] {
-    background: var(--card2) !important;
-    border-radius: 10px !important;
-    gap: 4px; padding: 4px;
-    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.02) !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--border) !important;
+    padding: 4px !important;
+    gap: 4px !important;
 }
 .stTabs [data-baseweb="tab"] {
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     color: var(--text-muted) !important;
     font-weight: 500 !important;
+    font-size: 0.88rem !important;
+    padding: 8px 16px !important;
+    transition: all 0.2s ease !important;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: var(--text-secondary) !important;
+    background: rgba(255,255,255,0.03) !important;
 }
 .stTabs [aria-selected="true"] {
-    background: linear-gradient(135deg, var(--primary) 0%, #7c3aed 100%) !important;
+    background: linear-gradient(135deg, var(--accent-1), var(--accent-2)) !important;
     color: white !important;
 }
+.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+.stTabs [data-baseweb="tab-border"] { display: none !important; }
 
 /* ── Inputs ─── */
-.stTextArea textarea, .stTextInput input, .stSelectbox select {
-    background: var(--card2) !important;
+.stTextArea textarea, .stTextInput input {
+    background: rgba(255,255,255,0.03) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
     color: var(--text) !important;
     font-family: 'Inter', sans-serif !important;
+    font-size: 0.9rem !important;
+    transition: all 0.2s ease !important;
 }
 .stTextArea textarea:focus, .stTextInput input:focus {
-    border-color: var(--primary) !important;
-    box-shadow: 0 0 0 2px rgba(79,70,229,0.2) !important;
+    border-color: var(--accent-1) !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
+}
+.stTextArea textarea::placeholder { color: var(--text-muted) !important; }
+
+/* ── Select ─── */
+.stSelectbox [data-baseweb="select"] {
+    background: rgba(255,255,255,0.03) !important;
+    border-color: var(--border) !important;
+    border-radius: 12px !important;
+}
+.stSelectbox [data-baseweb="select"]:hover {
+    border-color: var(--border-hover) !important;
 }
 
 /* ── Buttons ─── */
 .stButton > button {
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
     color: white !important;
     border: none !important;
-    border-radius: 10px !important;
-    padding: 0.55rem 1.8rem !important;
+    border-radius: 12px !important;
+    padding: 0.6rem 1.8rem !important;
     font-weight: 600 !important;
-    font-size: 0.95rem !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 4px 15px rgba(79,70,229,0.3) !important;
+    font-size: 0.9rem !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: 0.01em !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 4px 15px rgba(99,102,241,0.25) !important;
 }
 .stButton > button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 6px 20px rgba(79,70,229,0.45) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 25px rgba(99,102,241,0.4) !important;
+    filter: brightness(1.1) !important;
+}
+.stButton > button:active {
+    transform: translateY(0) !important;
 }
 
 /* ── File uploader ─── */
 [data-testid="stFileUploader"] {
-    background: var(--card2) !important;
-    border: 2px dashed var(--border) !important;
-    border-radius: 12px !important;
-    padding: 0.8rem !important;
+    background: rgba(255,255,255,0.02) !important;
+    border: 2px dashed rgba(255,255,255,0.08) !important;
+    border-radius: 14px !important;
 }
+[data-testid="stFileUploader"]:hover {
+    border-color: rgba(99,102,241,0.3) !important;
+}
+
+/* ── Expander ─── */
+.streamlit-expanderHeader {
+    background: rgba(255,255,255,0.02) !important;
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    font-size: 0.88rem !important;
+}
+
+/* ── Dividers ─── */
+hr { border-color: var(--border) !important; opacity: 0.5 !important; }
+
+/* ── Footer ─── */
+.lex-footer {
+    text-align: center;
+    padding: 2rem 0 1rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+}
+.lex-footer a {
+    color: var(--accent-1);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+.lex-footer a:hover { color: var(--accent-3); }
 
 /* ── Spinner ─── */
-.stSpinner { color: var(--primary-light) !important; }
+.stSpinner > div { border-top-color: var(--accent-1) !important; }
 
-/* ── Extracted text box ─── */
-.extracted-box {
-    background: #0a0a14;
+/* ── About cards ─── */
+.about-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 1rem 0;
+}
+.about-item {
+    background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.8rem 1rem;
-    font-size: 0.82rem;
-    font-family: 'Courier New', monospace;
+    border-radius: 12px;
+    padding: 1rem;
+}
+.about-item-label {
+    font-size: 0.72rem;
     color: var(--text-muted);
-    max-height: 200px;
-    overflow-y: auto;
-    white-space: pre-wrap;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+}
+.about-item-value {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
 }
 
-/* ── Status badge ─── */
-.badge-ok  { color: var(--success); font-weight:600; }
-.badge-err { color: var(--danger);  font-weight:600; }
-
-/* ── Section heading ─── */
-.section-heading {
+/* ── Setup guide ─── */
+.setup-card {
+    background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(6,182,212,0.05));
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    margin: 2rem 0;
+}
+.setup-card h3 {
     font-family: 'Outfit', sans-serif;
-    font-size: 1.05rem; font-weight: 600;
-    color: var(--primary-light);
-    margin: 1rem 0 0.5rem;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 4px;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+}
+.setup-card p { color: var(--text-secondary); font-size: 0.9rem; }
+.setup-card code {
+    background: rgba(0,0,0,0.3);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
 }
 </style>
 """, unsafe_allow_html=True)
 
+# ── Cached Resources ──────────────────────────────────────────────────────────
+
+@st.cache_resource(show_spinner=False)
+def load_embedding_model():
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(EMBED_MODEL)
+
+@st.cache_resource(show_spinner=False)
+def get_chroma_collection():
+    import chromadb
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    return client.get_or_create_collection(
+        name=CHROMA_COLLECTION,
+        metadata={"hnsw:space": "cosine"},
+    )
+
+# ── Core Functions ────────────────────────────────────────────────────────────
+
+def embed_query(text: str) -> list[float]:
+    model = load_embedding_model()
+    return model.encode([text]).tolist()[0]
+
+def retrieve_chunks(query: str, n: int = TOP_K) -> list[dict]:
+    collection = get_chroma_collection()
+    if collection.count() == 0:
+        return []
+    q_emb = embed_query(query)
+    results = collection.query(
+        query_embeddings=[q_emb],
+        n_results=min(n, collection.count()),
+        include=["documents", "metadatas", "distances"],
+    )
+    chunks = []
+    for doc, meta, dist in zip(
+        results["documents"][0],
+        results["metadatas"][0],
+        results["distances"][0],
+    ):
+        chunks.append({"text": doc, "metadata": meta, "distance": dist})
+    return chunks
+
+def build_context(chunks: list[dict]) -> str:
+    parts = []
+    for i, c in enumerate(chunks, 1):
+        m = c["metadata"]
+        parts.append(
+            f"[Source {i}] {m.get('act', '?')} | {m.get('section', '?')} | Page {m.get('page', '?')}\n"
+            f"{c['text']}"
+        )
+    return "\n\n---\n\n".join(parts)
+
+def call_groq(system_prompt: str, user_message: str) -> str:
+    api_key = os.getenv("GROQ_API_KEY", GROQ_API_KEY)
+    if not api_key:
+        return "❌ GROQ_API_KEY is not configured. Please set it in Streamlit Cloud secrets or environment variables."
+    try:
+        resp = httpx.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GROQ_MODEL,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 2048,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    except httpx.ConnectError:
+        return "❌ Cannot reach Groq API. Please check your internet connection."
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+def run_ingestion():
+    from utils.extractor import extract_pdf
+    from utils.chunker import chunk_document
+    collection = get_chroma_collection()
+    model = load_embedding_model()
+
+    pdfs = list(DATA_DIR.glob("*.pdf"))
+    if not pdfs:
+        return 0, "No PDFs found in data/ folder."
+
+    total = 0
+    for pdf in pdfs:
+        text = extract_pdf(pdf)
+        act_name = pdf.stem.replace("_", " ").replace("-", " ").title()
+        chunks = chunk_document(text, act_name, CHUNK_SIZE, CHUNK_OVERLAP)
+        if not chunks:
+            continue
+        texts = [c.text for c in chunks]
+        metas = [c.to_metadata() for c in chunks]
+        ids = [c.chunk_id for c in chunks]
+        embeddings = model.encode(texts, show_progress_bar=False).tolist()
+        batch = 100
+        for i in range(0, len(texts), batch):
+            collection.upsert(
+                ids=ids[i:i+batch],
+                documents=texts[i:i+batch],
+                embeddings=embeddings[i:i+batch],
+                metadatas=metas[i:i+batch],
+            )
+        total += len(chunks)
+    return total, f"✅ Ingested {total} chunks from {len(pdfs)} PDF(s)."
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="lex-header">
-  <span class="lex-logo">⚖️ LexPal</span>
-  <div>
-    <div style="font-weight:600;font-size:1rem;">AI Legal Information Assistant</div>
-    <div class="lex-tagline">India · Consumer, Tenancy, IT, NI Act, RTI · Free & Open Source</div>
-  </div>
+    <div class="lex-logo">⚖️ LexPal</div>
+    <div class="lex-tagline">AI-Powered Legal Information Assistant · India</div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── Sticky disclaimer ─────────────────────────────────────────────────────────
-st.markdown(f'<div class="disclaimer-banner">{DISCLAIMER_TEXT}</div>', unsafe_allow_html=True)
+# ── Disclaimer ────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="disclaimer-bar">
+    <span>⚠️</span>
+    <span>LexPal provides legal <strong>information</strong>, not legal <strong>advice</strong>.
+    For criminal charges, court deadlines, or large financial claims, consult a licensed lawyer.</span>
+</div>
+""", unsafe_allow_html=True)
 
+# ── Check API key ─────────────────────────────────────────────────────────────
+api_key = os.getenv("GROQ_API_KEY", GROQ_API_KEY)
+if not api_key:
+    st.markdown("""
+    <div class="setup-card">
+        <h3>🔑 Setup Required</h3>
+        <p>LexPal needs a free Groq API key to work.</p>
+        <p style="margin-top:1rem;">
+            1. Go to <a href="https://console.groq.com" target="_blank" style="color:#818cf8;">console.groq.com</a> (free signup, no credit card)<br>
+            2. Create an API key<br>
+            3. Add <code>GROQ_API_KEY</code> to your Streamlit Cloud secrets or environment
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
 
-# ── API health check ──────────────────────────────────────────────────────────
-def check_api() -> dict | None:
-    try:
-        r = requests.get(f"{API_BASE}/health", timeout=4)
-        return r.json() if r.ok else None
-    except Exception:
-        return None
+# ── Status metrics ────────────────────────────────────────────────────────────
+try:
+    collection = get_chroma_collection()
+    db_count = collection.count()
+except Exception:
+    db_count = 0
 
-
-health = check_api()
-if health:
-    db_chunks = health.get("db_chunks", 0)
-    model     = health.get("model", "?")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🟢 Backend", "Online")
-    col2.metric("📚 Law Chunks", f"{db_chunks:,}")
-    col3.metric("🤖 Model", model.split(":")[0])
-else:
-    st.error(
-        "⚠️ Backend is offline. Start it with: `uvicorn main:app --reload`",
-        icon="🔴",
-    )
-
-st.markdown("---")
+st.markdown(f"""
+<div class="metric-row">
+    <div class="metric-card">
+        <div class="metric-value">{"●" if api_key else "○"}</div>
+        <div class="metric-label">Groq API</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">{db_count:,}</div>
+        <div class="metric-label">Law Chunks</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">{len(COVERED_ACTS)}</div>
+        <div class="metric-label">Acts Covered</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-value">3</div>
+        <div class="metric-label">Languages</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_ask, tab_analyze, tab_ingest, tab_about = st.tabs([
-    "💬 Ask a Question",
-    "📄 Analyze My Document",
-    "⚙️ Ingest Laws",
-    "ℹ️ About",
+tab_ask, tab_analyze, tab_db, tab_about = st.tabs([
+    "💬  Ask a Question",
+    "📄  Analyze Document",
+    "⚙️  Database",
+    "ℹ️  About",
 ])
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB 1 – ASK A QUESTION
-# ─────────────────────────────────────────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 1 — ASK A QUESTION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_ask:
-    st.markdown('<div class="section-heading">Ask a Legal Question</div>', unsafe_allow_html=True)
-    st.caption("Questions are answered using only the laws in the database. Every answer includes citations.")
+    st.markdown('<div class="section-title">💬 Ask a Legal Question</div>', unsafe_allow_html=True)
 
-    with st.form("ask_form"):
+    with st.form("ask_form", clear_on_submit=False):
         question = st.text_area(
-            "Your Question",
-            placeholder=(
-                "e.g. What are my rights if my landlord refuses to return the security deposit?\n"
-                "e.g. A cheque given to me bounced. What can I do?\n"
-                "e.g. How do I file an RTI application?"
-            ),
-            height=130,
-            key="question_input",
+            "Your question",
+            placeholder="e.g. What are my rights if my landlord refuses to return my security deposit?",
+            height=120,
+            label_visibility="collapsed",
         )
-        col_lang, col_btn = st.columns([2, 1])
-        with col_lang:
-            language = st.selectbox("Reply Language", ["English", "Hindi", "Marathi"], key="ask_lang")
-        with col_btn:
-            st.markdown("<br>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("🔍 Get Answer", use_container_width=True)
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            language = st.selectbox("Language", SUPPORTED_LANGUAGES, label_visibility="collapsed")
+        with c2:
+            asked = st.form_submit_button("Ask LexPal", use_container_width=True)
 
-    if submitted:
-        if not question.strip():
-            st.warning("Please enter a question.")
-        else:
-            with st.spinner("Searching laws and generating answer…"):
-                try:
-                    resp = requests.post(
-                        f"{API_BASE}/ask",
-                        json={"question": question, "language": language},
-                        timeout=120,
-                    )
-                    if resp.ok:
-                        data = resp.json()
-                        # ── Answer card ──────────────────────────────────────
-                        st.markdown('<div class="lex-card lex-card-accent">', unsafe_allow_html=True)
-                        st.markdown("**📋 Answer**")
-                        st.markdown(
-                            f'<div class="answer-text">{data["answer"]}</div>',
-                            unsafe_allow_html=True,
-                        )
-                        st.markdown('</div>', unsafe_allow_html=True)
+    if asked and question.strip():
+        with st.spinner("Searching laws & generating answer…"):
+            chunks = retrieve_chunks(question, TOP_K)
+            if not chunks:
+                st.warning("📚 No law data in the database yet. Go to the **Database** tab to ingest law PDFs first.")
+            else:
+                context = build_context(chunks)
+                system = RAG_SYSTEM_PROMPT.format(language=language, context=context)
+                answer = call_groq(system, question)
 
-                        # ── Sources ──────────────────────────────────────────
-                        sources = data.get("sources", [])
-                        if sources:
-                            st.markdown('<div class="section-heading">📌 Sources Used</div>', unsafe_allow_html=True)
-                            chips = ""
-                            for s in sources:
-                                chips += f'<span class="source-chip">📜 {s["act"]} · {s["section"]} · p.{s["page"]}</span>'
-                            st.markdown(chips, unsafe_allow_html=True)
+                # Answer card
+                st.markdown(f"""
+                <div class="glass-card glass-card-accent">
+                    <div class="section-title">📋 Answer</div>
+                    <div class="answer-block">{answer}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                            with st.expander("View source snippets"):
-                                for i, s in enumerate(sources, 1):
-                                    st.markdown(f"**Source {i}** – {s['act']} | {s['section']} | Page {s['page']}")
-                                    st.markdown(
-                                        f'<div class="extracted-box">{s["snippet"]}</div>',
-                                        unsafe_allow_html=True,
-                                    )
+                # Source pills
+                st.markdown('<div class="section-title">📌 Sources</div>', unsafe_allow_html=True)
+                pills = ""
+                for s in chunks:
+                    m = s["metadata"]
+                    pills += f'<span class="source-pill">📜 {m.get("act","?")} · {m.get("section","?")} · p.{m.get("page","?")}</span>'
+                st.markdown(pills, unsafe_allow_html=True)
 
-                        # ── Lawyer callout ───────────────────────────────────
-                        st.markdown(
-                            '<div class="lawyer-callout">'
-                            '👨‍⚖️ <strong>Need professional help?</strong> '
-                            'For court deadlines, criminal matters, or claims above ₹20 lakh, '
-                            'please consult a licensed lawyer. '
-                            'You can find one via the <a href="https://www.barcouncilofindia.org" target="_blank" '
-                            'style="color:#fde68a">Bar Council of India</a>.'
-                            '</div>',
-                            unsafe_allow_html=True,
-                        )
+                with st.expander("View source excerpts"):
+                    for i, s in enumerate(chunks, 1):
+                        m = s["metadata"]
+                        st.markdown(f"**Source {i}** — {m.get('act','')} | {m.get('section','')} | Page {m.get('page','')}")
+                        st.markdown(f'<div class="code-preview">{s["text"][:500]}</div>', unsafe_allow_html=True)
 
-                        # ── Disclaimer ───────────────────────────────────────
-                        st.info(data.get("disclaimer", ""), icon="⚠️")
+                # Lawyer callout
+                st.markdown("""
+                <div class="lawyer-box">
+                    👨‍⚖️ <strong>Need professional help?</strong> For court deadlines, criminal matters, or claims above ₹20 lakh,
+                    consult a licensed lawyer via the <a href="https://www.barcouncilofindia.org" target="_blank">Bar Council of India</a>.
+                </div>
+                """, unsafe_allow_html=True)
+    elif asked:
+        st.warning("Please enter a question.")
 
-                    else:
-                        st.error(f"API Error {resp.status_code}: {resp.text}")
-                except requests.exceptions.ConnectionError:
-                    st.error("Cannot connect to the backend. Make sure `uvicorn main:app --reload` is running.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB 2 – ANALYZE DOCUMENT
-# ─────────────────────────────────────────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 2 — ANALYZE DOCUMENT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_analyze:
-    st.markdown('<div class="section-heading">Upload & Analyze a Legal Document</div>', unsafe_allow_html=True)
-    st.caption(
-        "Upload a rent notice, court order, FIR copy, cheque bounce notice, agreement, or any legal document. "
-        "Supported: PDF, DOCX, TXT, JPG, PNG (max 10 MB)."
-    )
+    st.markdown('<div class="section-title">📄 Upload & Analyze a Legal Document</div>', unsafe_allow_html=True)
+    st.caption("Upload a notice, agreement, court order, FIR copy, or photo. Supported: PDF, DOCX, TXT, JPG, PNG (max 10 MB).")
 
-    uploaded_file = st.file_uploader(
-        "Drop your document here",
+    uploaded = st.file_uploader(
+        "Upload document",
         type=["pdf", "docx", "txt", "jpg", "jpeg", "png", "bmp", "tiff"],
-        key="doc_uploader",
         label_visibility="collapsed",
     )
 
-    col_lang2, col_analyze_btn = st.columns([2, 1])
-    with col_lang2:
-        lang2 = st.selectbox("Reply Language", ["English", "Hindi", "Marathi"], key="analyze_lang")
-    with col_analyze_btn:
-        st.markdown("<br>", unsafe_allow_html=True)
-        analyze_clicked = st.button("🔎 Analyze Document", use_container_width=True, key="analyze_btn")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        lang2 = st.selectbox("Language", SUPPORTED_LANGUAGES, key="analyze_lang", label_visibility="collapsed")
+    with c2:
+        analyze_clicked = st.button("🔎 Analyze", use_container_width=True)
 
     if analyze_clicked:
-        if not uploaded_file:
+        if not uploaded:
             st.warning("Please upload a file first.")
         else:
-            with st.spinner("Extracting text and analyzing document…"):
+            with st.spinner("Extracting text & analyzing…"):
+                suffix = Path(uploaded.name).suffix.lower()
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp.write(uploaded.getvalue())
+                    tmp_path = Path(tmp.name)
+
                 try:
-                    files   = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                    payload = {"language": lang2}
-                    resp = requests.post(
-                        f"{API_BASE}/analyze",
-                        files=files,
-                        data=payload,
-                        timeout=180,
-                    )
-                    if resp.ok:
-                        data = resp.json()
+                    from utils.extractor import extract_text
+                    extracted = extract_text(tmp_path)
 
-                        # ── OCR badge ──────────────────────────────────────
-                        if data.get("ocr_used"):
-                            st.success("✅ OCR was used to extract text from this document.", icon="🔍")
-
-                        # ── Extracted text preview ─────────────────────────
-                        with st.expander("📄 Extracted Document Text"):
-                            st.markdown(
-                                f'<div class="extracted-box">{data["extracted_text"][:3000]}</div>',
-                                unsafe_allow_html=True,
-                            )
-
-                        # ── Analysis card ──────────────────────────────────
-                        st.markdown('<div class="lex-card lex-card-accent">', unsafe_allow_html=True)
-                        st.markdown("**🧠 Document Analysis**")
-                        st.markdown(
-                            f'<div class="answer-text">{data["analysis"]}</div>',
-                            unsafe_allow_html=True,
-                        )
-                        st.markdown('</div>', unsafe_allow_html=True)
-
-                        # ── Sources ────────────────────────────────────────
-                        sources = data.get("sources", [])
-                        if sources:
-                            st.markdown('<div class="section-heading">📌 Relevant Laws Found</div>', unsafe_allow_html=True)
-                            chips = ""
-                            for s in sources:
-                                chips += f'<span class="source-chip">📜 {s["act"]} · {s["section"]} · p.{s["page"]}</span>'
-                            st.markdown(chips, unsafe_allow_html=True)
-
-                        # ── Lawyer callout ─────────────────────────────────
-                        st.markdown(
-                            '<div class="lawyer-callout">'
-                            '👨‍⚖️ <strong>Important:</strong> This analysis is a starting point only. '
-                            'Before responding to any legal notice or court order, '
-                            'consult a licensed lawyer.'
-                            '</div>',
-                            unsafe_allow_html=True,
-                        )
-                        st.info(data.get("disclaimer", ""), icon="⚠️")
-
+                    if not extracted.strip():
+                        st.error("Could not extract text from this file.")
                     else:
-                        detail = resp.json().get("detail", resp.text)
-                        st.error(f"Error {resp.status_code}: {detail}")
-                except requests.exceptions.ConnectionError:
-                    st.error("Cannot connect to the backend. Make sure `uvicorn main:app --reload` is running.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                        with st.expander("📄 Extracted Text"):
+                            st.markdown(f'<div class="code-preview">{extracted[:3000]}</div>', unsafe_allow_html=True)
 
+                        chunks = retrieve_chunks(extracted[:1000], TOP_K)
+                        context = build_context(chunks) if chunks else "No relevant laws found in database."
+                        system = ANALYZE_SYSTEM_PROMPT.format(
+                            language=lang2,
+                            document_text=extracted[:3000],
+                            context=context,
+                        )
+                        analysis = call_groq(system, "Analyze this document and provide next steps.")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB 3 – INGEST LAWS
-# ─────────────────────────────────────────────────────────────────────────────
-with tab_ingest:
-    st.markdown('<div class="section-heading">⚙️ Ingest Law PDFs</div>', unsafe_allow_html=True)
-    st.info(
-        "Place official bare act PDFs in the `data/` folder, then click **Run Ingestion**. "
-        "This processes every PDF, chunks it section-by-section, embeds it, and stores it in ChromaDB. "
-        "Run this once after downloading laws.",
-        icon="💡",
-    )
+                        st.markdown(f"""
+                        <div class="glass-card glass-card-accent">
+                            <div class="section-title">🧠 Analysis</div>
+                            <div class="answer-block">{analysis}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-    st.markdown("**Recommended PDFs to download:**")
-    acts = [
-        ("Consumer Protection Act 2019", "https://consumeraffairs.nic.in/sites/default/files/file-uploads/acts-and-rules/Consumer%20Protection%20Act%202019.pdf"),
-        ("Negotiable Instruments Act 1881", "https://indiacode.nic.in/bitstream/123456789/2051/1/188126.pdf"),
-        ("IT Act 2000", "https://indiacode.nic.in/bitstream/123456789/1999/3/200021.pdf"),
-        ("RTI Act 2005", "https://rti.gov.in/rti-act.pdf"),
-        ("Maharashtra Rent Control Act 1999", "https://maharerait.mahaonline.gov.in/images/pdf/Maharashtra_Rent_Control_act_1999.pdf"),
-    ]
-    for name, url in acts:
-        st.markdown(f"- [{name}]({url})")
+                        if chunks:
+                            st.markdown('<div class="section-title">📌 Relevant Laws</div>', unsafe_allow_html=True)
+                            pills = ""
+                            for s in chunks:
+                                m = s["metadata"]
+                                pills += f'<span class="source-pill">📜 {m.get("act","?")} · {m.get("section","?")} · p.{m.get("page","?")}</span>'
+                            st.markdown(pills, unsafe_allow_html=True)
+
+                        st.markdown("""
+                        <div class="lawyer-box">
+                            👨‍⚖️ <strong>Important:</strong> This analysis is a starting point only.
+                            Before responding to any legal notice or court order, consult a licensed lawyer.
+                        </div>
+                        """, unsafe_allow_html=True)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 3 — DATABASE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with tab_db:
+    st.markdown('<div class="section-title">⚙️ Law Database</div>', unsafe_allow_html=True)
+    st.caption("Place official bare-act PDFs in the `data/` folder, then click Ingest to process them into the vector database.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"""
+        <div class="glass-card">
+            <div class="metric-value">{db_count}</div>
+            <div class="metric-label" style="margin-top:4px;">Chunks in database</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        pdfs = list(DATA_DIR.glob("*.pdf")) if DATA_DIR.exists() else []
+        st.markdown(f"""
+        <div class="glass-card">
+            <div class="metric-value">{len(pdfs)}</div>
+            <div class="metric-label" style="margin-top:4px;">PDFs in data/ folder</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if pdfs:
+        st.markdown('<div class="section-title">📂 Files Found</div>', unsafe_allow_html=True)
+        for p in pdfs:
+            st.markdown(f"- `{p.name}` ({p.stat().st_size / 1024:.0f} KB)")
 
     st.markdown("---")
-    if st.button("🚀 Run Ingestion Pipeline", key="ingest_btn"):
-        with st.spinner("Ingesting PDFs into ChromaDB… this may take a few minutes."):
-            try:
-                resp = requests.post(f"{API_BASE}/ingest", timeout=600)
-                if resp.ok:
-                    st.success(f"✅ {resp.json().get('message', 'Done!')}")
-                    st.rerun()
-                else:
-                    st.error(f"Ingestion failed: {resp.text}")
-            except Exception as e:
-                st.error(f"Error: {e}")
+    st.markdown("**Recommended acts to download:**")
+    for act in COVERED_ACTS:
+        st.markdown(f"- {act}")
 
+    st.markdown("---")
+    if st.button("🚀 Run Ingestion", use_container_width=True):
+        with st.spinner("Ingesting PDFs… this may take a few minutes."):
+            total, msg = run_ingestion()
+            if total > 0:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.warning(msg)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TAB 4 – ABOUT
-# ─────────────────────────────────────────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# TAB 4 — ABOUT
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_about:
-    st.markdown('<div class="section-heading">About LexPal</div>', unsafe_allow_html=True)
     st.markdown("""
-<div class="lex-card">
+    <div class="glass-card" style="text-align:center; padding:2rem;">
+        <div style="font-family:'Outfit',sans-serif; font-size:1.8rem; font-weight:700;
+             background:linear-gradient(135deg,#818cf8,#06b6d4); -webkit-background-clip:text;
+             -webkit-text-fill-color:transparent; margin-bottom:0.5rem;">
+            ⚖️ LexPal
+        </div>
+        <div style="color:var(--text-secondary); font-size:0.92rem; max-width:500px; margin:0 auto; line-height:1.7;">
+            A free, open-source AI assistant that helps ordinary people understand
+            their legal rights in India — in plain English, Hindi, or Marathi.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-**LexPal** is a free, open-source AI assistant that helps ordinary people understand their legal rights in India — in plain English, Hindi, or Marathi.
+    st.markdown('<div class="section-title">🧠 How It Works</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="glass-card">
+        <ol style="color:var(--text-secondary); line-height:2; font-size:0.88rem; padding-left:1.2rem;">
+            <li>Official bare-act PDFs are split into chunks tagged with Act, Section & page number</li>
+            <li>Each chunk is converted to a vector and stored in ChromaDB (local database)</li>
+            <li>When you ask a question, the most relevant law chunks are retrieved</li>
+            <li>Groq's Llama 3 generates an answer using <strong>only</strong> those retrieved chunks</li>
+            <li>Every answer cites its sources. If the answer isn't in the database, LexPal says so</li>
+        </ol>
+    </div>
+    """, unsafe_allow_html=True)
 
-### How It Works (RAG)
-1. Official bare-act PDFs are split into chunks tagged with Act name, Section number, and page.
-2. Each chunk is converted to a vector and stored in ChromaDB (local, no cloud).
-3. When you ask a question or upload a document, the most relevant law chunks are retrieved.
-4. A local LLM (Llama 3.1 via Ollama) generates an answer using **only** those chunks.
-5. Every answer cites its sources. If the answer is not in the database, LexPal says so.
+    st.markdown('<div class="section-title">📚 Laws Covered</div>', unsafe_allow_html=True)
+    st.markdown('<div class="about-grid">', unsafe_allow_html=True)
+    for act in COVERED_ACTS:
+        parts = act.rsplit(" ", 1)
+        name = parts[0] if len(parts) > 1 else act
+        year = parts[1] if len(parts) > 1 else ""
+        st.markdown(f"""
+        <div class="about-item">
+            <div class="about-item-label">{year}</div>
+            <div class="about-item-value">{name}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-### Laws Covered (MVP)
-| Act | Year |
-|-----|------|
-| Consumer Protection Act | 2019 |
-| Negotiable Instruments Act | 1881 |
-| Information Technology Act | 2000 |
-| Maharashtra Rent Control Act | 1999 |
-| Right to Information Act | 2005 |
+    st.markdown('<div class="section-title">🔧 Tech Stack</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="about-grid">
+        <div class="about-item"><div class="about-item-label">LLM</div><div class="about-item-value">Groq · Llama 3</div></div>
+        <div class="about-item"><div class="about-item-label">Embeddings</div><div class="about-item-value">all-MiniLM-L6-v2</div></div>
+        <div class="about-item"><div class="about-item-label">Vector DB</div><div class="about-item-value">ChromaDB</div></div>
+        <div class="about-item"><div class="about-item-label">OCR</div><div class="about-item-value">Tesseract</div></div>
+        <div class="about-item"><div class="about-item-label">Frontend</div><div class="about-item-value">Streamlit</div></div>
+        <div class="about-item"><div class="about-item-label">Cost</div><div class="about-item-value">100% Free</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-### Privacy
-- Uploaded documents are processed **in memory only** and deleted immediately.
-- No user data, queries, or documents are stored.
-
-### Tech Stack
-| Layer | Tool |
-|-------|------|
-| LLM | Ollama + Llama 3.1 8B |
-| Embeddings | all-MiniLM-L6-v2 |
-| Vector DB | ChromaDB (local) |
-| OCR | Tesseract (eng+hin+mar) |
-| Backend | FastAPI |
-| Frontend | Streamlit |
-
-### Limitations & Disclaimer
-LexPal provides **legal information, not legal advice**. It may be incorrect or outdated.
-Always consult a licensed lawyer for serious matters.
-
-### Links
-- 🐙 [GitHub Repository](https://github.com/jishanmujawar33/LexPal)
-- 🇮🇳 [India Code (official law texts)](https://indiacode.nic.in)
-- ⚖️ [Bar Council of India](https://www.barcouncilofindia.org)
-
-</div>
-""", unsafe_allow_html=True)
-
+    st.markdown("""
+    <div class="glass-card" style="margin-top:1rem;">
+        <div class="section-title">🔒 Privacy</div>
+        <p style="color:var(--text-secondary); font-size:0.88rem; line-height:1.7; margin:0;">
+            Uploaded documents are processed in memory only and deleted immediately.
+            No user data, queries, or documents are stored permanently.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown(
-    '<div style="text-align:center;color:#475569;font-size:0.82rem;padding:0.5rem 0;">'
-    '⚖️ LexPal · Legal Information Only · Not a Lawyer · Open Source · '
-    '<a href="https://github.com/jishanmujawar33/LexPal" style="color:#818cf8;">GitHub</a>'
-    '</div>',
-    unsafe_allow_html=True,
-)
+st.markdown("""
+<div class="lex-footer">
+    ⚖️ LexPal · Legal Information Only · Not Legal Advice · 100% Free & Open Source ·
+    <a href="https://github.com/jishanmujawar33/LexPal" target="_blank">GitHub</a>
+</div>
+""", unsafe_allow_html=True)
